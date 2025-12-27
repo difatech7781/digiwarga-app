@@ -1,14 +1,9 @@
 import { useState, useEffect } from 'react'
 import { 
-  LogOut, CreditCard, FileText, Bell, RefreshCw, 
-  Download, Clock, CheckCircle, XCircle, Loader2,
-  Settings, User, Save, X, AlertCircle, 
-  ShieldCheck // Icon Admin
+  LogOut, CreditCard, FileText, Bell, User, ShieldCheck,
+  ShoppingBag, Vote, Box, Siren, Users, BookOpen, ChevronDown, ChevronUp, Loader2, CheckCircle, XCircle
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-
-// IMPORT FOOTER
-import VendorFooter from '../components/VendorFooter'
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -16,336 +11,244 @@ export default function Dashboard() {
   // 1. SAFETY CHECK
   const userString = localStorage.getItem('dg_user')
   const user = userString ? JSON.parse(userString) : {}
-  const clientName = localStorage.getItem('dg_client_name')
   const apiUrl = localStorage.getItem('dg_api_url')
-
-  // CEK ROLE ADMIN
+  const tenantId = localStorage.getItem('dg_tenant_id') || 'UMUM';
   const isAdmin = ['SUPERADMIN', 'ADMIN', 'OPERATOR'].includes(user.role?.toUpperCase())
 
   useEffect(() => {
-    if (!user || !user.id) {
-      navigate('/')
-    }
+    if (!user || !user.id) navigate('/')
   }, [user, navigate])
 
-  // --- STATE ---
+  // STATE
   const [dashboardData, setDashboardData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState('PAYMENT')
+  
+  const [payHistory, setPayHistory] = useState([])
+  const [payLoading, setPayLoading] = useState(false)
+  const [payYear, setPayYear] = useState(new Date().getFullYear().toString())
+  const [payPage, setPayPage] = useState(1)
+  const [expandedPayId, setExpandedPayId] = useState(null)
 
-  // State Modals
+  const [letterHistory, setLetterHistory] = useState([])
+  const [letterLoading, setLetterLoading] = useState(false)
+  const [letterYear, setLetterYear] = useState(new Date().getFullYear().toString())
+  const [letterPage, setLetterPage] = useState(1)
+  const [expandedLetterId, setExpandedLetterId] = useState(null)
+
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
   const [statusModal, setStatusModal] = useState({ show: false, type: 'success', title: '', message: '' })
   
-  const [profileData, setProfileData] = useState({
-    name: user.name || '', phone: user.phone || '', address: user.address || '', password: ''
-  })
+  const [formData, setFormData] = useState({ name: user.name || '', phone: user.phone || '', password: '', address: user.address || '' })
+  const [isUpdating, setIsUpdating] = useState(false)
 
-  // State Paginasi
-  const [suratPage, setSuratPage] = useState(1)
-  const [itemsPerPage] = useState(3)
+  const ITEMS_PER_PAGE = 3
 
-  // --- FETCH DATA ---
-  const fetchDashboard = async () => {
-    if (!dashboardData) setLoading(true)
-    
+  const getGreeting = () => {
+    const h = new Date().getHours();
+    return h < 11 ? 'Selamat Pagi' : h < 15 ? 'Selamat Siang' : h < 18 ? 'Selamat Sore' : 'Selamat Malam';
+  }
+
+  const getRTLabel = () => (user.rt_code && user.rt_code !== 'UMUM') ? user.rt_code.toUpperCase() : tenantId.toUpperCase();
+
+  // FETCH DATA
+  const fetchData = async () => {
+    setLoading(true)
     try {
-      if (!user.id) return 
-
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'get_dashboard',
-          payload: { user_id: user.id }
-        })
-      })
+      const res = await fetch(apiUrl, { method: 'POST', body: JSON.stringify({ action: 'get_dashboard', payload: { user_id: user.id, tenant_id } }) })
       const json = await res.json()
-      const finalData = json.data || json
-      
-      if (json.status === 'success' || finalData.user) {
-        setDashboardData(finalData)
-      } else {
-        console.warn("Data dashboard tidak lengkap:", json.message)
-      }
-    } catch (err) {
-      console.error("Gagal ambil data:", err)
-    } finally {
-      setLoading(false)
-    }
+      setDashboardData(json.data)
+    } catch (e) { console.error(e) } finally { setLoading(false) }
   }
 
-  useEffect(() => {
-    if (user.id) fetchDashboard()
-  }, [])
-
-  // --- LOGIC PERHITUNGAN ---
-  const allSurat = dashboardData?.documents || []
-  const visibleSurat = allSurat.slice((suratPage - 1) * itemsPerPage, suratPage * itemsPerPage)
-
-  const totalBill = (dashboardData?.bills || [])
-    .filter(item => item.status === 'PENDING')
-    .reduce((acc, item) => acc + Number(item.amount || 0), 0)
-
-  const formatRupiah = (num) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(num || 0)
-
-  // --- LOGIC LAIN ---
-  const handleLogout = () => {
-    localStorage.removeItem('dg_token')
-    localStorage.removeItem('dg_user')
-    navigate('/')
-  }
-
-  const initiateSaveProfile = (e) => { e.preventDefault(); setShowConfirmDialog(true); }
-
-  const processUpdateProfile = async () => {
-    setShowConfirmDialog(false)
+  const fetchPayHistory = async () => {
+    setPayLoading(true)
     try {
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'update_profile', payload: { user_id: user.id, data: profileData } })
-      })
+      const res = await fetch(apiUrl, { method: 'POST', body: JSON.stringify({ action: 'get_user_history', payload: { user_id: user.id, type: 'PAYMENT', year: payYear, tenant_id } }) })
+      const json = await res.json()
+      setPayHistory(json.data || [])
+      setPayPage(1)
+    } catch(e) { console.error(e) } finally { setPayLoading(false) }
+  }
+
+  const fetchLetterHistory = async () => {
+    setLetterLoading(true)
+    try {
+      const res = await fetch(apiUrl, { method: 'POST', body: JSON.stringify({ action: 'get_user_history', payload: { user_id: user.id, type: 'LETTER', year: letterYear, tenant_id } }) })
+      const json = await res.json()
+      setLetterHistory(json.data || [])
+      setLetterPage(1)
+    } catch(e) { console.error(e) } finally { setLetterLoading(false) }
+  }
+
+  useEffect(() => { if(user.id) { fetchData(); fetchPayHistory(); fetchLetterHistory(); } }, [])
+  useEffect(() => { if(user.id) fetchPayHistory() }, [payYear])
+  useEffect(() => { if(user.id) fetchLetterHistory() }, [letterYear])
+
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault(); setIsUpdating(true);
+    try {
+      const res = await fetch(apiUrl, { method: 'POST', body: JSON.stringify({ action: 'update_profile', payload: { user_id: user.id, data: formData, tenant_id } }) })
       const json = await res.json()
       if (json.status === 'success') {
-        setStatusModal({ show: true, type: 'success', title: 'Berhasil Disimpan!', message: 'Silakan login ulang agar data terupdate.' })
+        setStatusModal({ show: true, type: 'success', title: 'Berhasil', message: 'Profil diupdate.' })
+        localStorage.setItem('dg_user', JSON.stringify({ ...user, ...formData }))
         setShowProfileModal(false)
-      } else {
-        setStatusModal({ show: true, type: 'error', title: 'Gagal', message: json.message })
-      }
-    } catch (err) { 
-       setStatusModal({ show: true, type: 'error', title: 'Error', message: 'Koneksi bermasalah.' })
-    }
+      } else { setStatusModal({ show: true, type: 'error', title: 'Gagal', message: json.message }) }
+    } catch (error) { setStatusModal({ show: true, type: 'error', title: 'Error', message: 'Koneksi gagal.' }) } finally { setIsUpdating(false) }
   }
 
-  const handleStatusOk = () => {
-    setStatusModal({ ...statusModal, show: false })
-    if (statusModal.type === 'success' && statusModal.title.includes('Berhasil')) handleLogout()
-  }
+  const handleLogout = () => { localStorage.clear(); navigate('/') }
+  
+  // --- MENU CONFIG (LABEL UPDATED) ---
+  const menuItems = [
+    { label: 'Bayar Iuran', icon: CreditCard, color: 'bg-blue-500', link: '/bayar' },
+    { label: 'Surat', icon: FileText, color: 'bg-purple-500', link: '/surat' },
+    { label: 'Lapor!', icon: Siren, color: 'bg-red-500', link: '/lapor' },
+    { label: 'Lapak Warga', icon: ShoppingBag, color: 'bg-orange-500', link: '/market' }, // Label Updated
+    { label: 'Musyawarah', icon: Vote, color: 'bg-teal-500', link: '/vote' },
+    { label: 'Aset RT', icon: Box, color: 'bg-indigo-500', link: '/aset' },
+    { label: 'Ronda', icon: ShieldCheck, color: 'bg-slate-600', link: '/ronda' },
+    { label: 'Buku Tamu', icon: Users, color: 'bg-pink-500', link: '/tamu' },
+    { label: 'Info Penting', icon: BookOpen, color: 'bg-green-500', link: '/info' },
+  ];
+
+  const paginatedPay = payHistory.slice((payPage - 1) * ITEMS_PER_PAGE, payPage * ITEMS_PER_PAGE);
+  const paginatedLetter = letterHistory.slice((letterPage - 1) * ITEMS_PER_PAGE, letterPage * ITEMS_PER_PAGE);
+  const getNote = (jsonStr) => { try { return JSON.parse(jsonStr).keperluan || '-' } catch(e) { return '-' } }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
+    <div className="min-h-screen bg-gray-50 pb-20 relative">
       
-      {/* 1. HEADER & SALDO */}
-      <div className="bg-indigo-600 px-6 pt-8 pb-20 rounded-b-[2.5rem] shadow-lg relative">
-        <div className="flex justify-between items-center text-white mb-6">
-          <div>
-            <p className="text-indigo-200 text-xs">Selamat datang,</p>
-            <h2 className="text-2xl font-bold">{dashboardData?.user?.name || user.name || 'Warga'}</h2>
-            <p className="text-xs text-indigo-200 mt-1">{clientName || 'Warga Digital'} - {dashboardData?.user?.rt_code || user.rt_code || ''}</p>
+      {/* HEADER */}
+      <div className="bg-[#1877F2] pb-24 pt-8 px-6 rounded-b-[40px] shadow-xl relative overflow-hidden">
+        <div className="absolute top-[-50%] left-[-20%] w-96 h-96 bg-white opacity-10 rounded-full blur-3xl"></div>
+        <div className="relative z-10 flex justify-between items-start">
+          <div className="text-white">
+            <p className="text-blue-200 text-sm font-medium mb-1">{getGreeting()}</p>
+            <h1 className="text-2xl font-bold tracking-tight">{user.name}</h1>
+            <div className="flex items-center gap-2 mt-2 bg-white/20 w-fit px-3 py-1 rounded-full backdrop-blur-sm shadow-sm border border-white/10">
+              <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+              <span className="text-xs font-mono font-bold uppercase tracking-wide">WARGA | {getRTLabel()}</span>
+            </div>
           </div>
-          
           <div className="flex gap-2">
-            
-            {/* TOMBOL ADMIN PANEL */}
-            {isAdmin && (
-              <button 
-                onClick={() => navigate('/admin')} 
-                className="p-2 bg-orange-500/20 text-orange-200 rounded-full hover:bg-orange-500/40 transition border border-orange-500/30"
-                title="Akses Admin Panel"
-              >
-                <ShieldCheck className="w-5 h-5" />
-              </button>
-            )}
-
-            {/* TOMBOL EDIT PROFIL */}
-            <button onClick={() => { setProfileData({ ...profileData, name: user.name, phone: user.phone }); setShowProfileModal(true); }} className="p-2 bg-white/20 rounded-full hover:bg-white/30 transition">
-              <Settings className="w-5 h-5" />
-            </button>
-            
-            {/* TOMBOL LOGOUT */}
-            <button onClick={handleLogout} className="p-2 bg-white/20 rounded-full hover:bg-white/30 transition">
-              <LogOut className="w-5 h-5" />
-            </button>
-
-            {/* --- DUPLIKAT SUDAH DIHAPUS --- */}
+             {isAdmin && <button onClick={()=>navigate('/admin')} className="p-2 bg-orange-500 hover:bg-orange-600 rounded-xl shadow-lg text-white"><ShieldCheck className="w-6 h-6"/></button>}
+             <button onClick={()=>setShowProfileModal(true)} className="p-2 bg-white/20 hover:bg-white/30 rounded-xl backdrop-blur-md"><User className="text-white w-6 h-6"/></button>
+             <button onClick={()=>setShowConfirmDialog(true)} className="p-2 bg-red-500/80 hover:bg-red-600 rounded-xl shadow-lg"><LogOut className="text-white w-6 h-6"/></button>
           </div>
-        </div>
-
-        {/* KARTU TAGIHAN */}
-        <div className="bg-white text-gray-800 p-5 rounded-2xl shadow-xl border border-gray-100 relative overflow-hidden">
-          {loading && !dashboardData ? (
-             <div className="animate-pulse h-16 bg-gray-100 rounded w-full"></div>
-          ) : (
-            <>
-               <div className="absolute top-0 right-0 p-4 opacity-5"><CreditCard className="w-24 h-24 text-indigo-600" /></div>
-               <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Total Tagihan Saya</p>
-               <div className="flex justify-between items-end mt-2 relative z-10">
-                 <div>
-                   <h3 className={`text-3xl font-bold ${totalBill > 0 ? 'text-orange-500' : 'text-gray-900'}`}>{formatRupiah(totalBill)}</h3>
-                   <p className="text-[10px] text-gray-400 mt-1">{totalBill > 0 ? 'Mohon segera lunasi.' : 'Terima kasih sudah tertib!'}</p>
-                 </div>
-                 {totalBill > 0 ? (
-                    <div className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full text-[10px] font-bold animate-pulse">BELUM BAYAR</div>
-                 ) : (
-                    <div className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-[10px] font-bold">LUNAS</div>
-                 )}
-               </div>
-            </>
-          )}
         </div>
       </div>
 
-      {/* 2. MENU UTAMA */}
-      <div className="px-6 -mt-8 grid grid-cols-2 gap-4 relative z-10 mb-8">
-        <MenuCard icon={CreditCard} label="Bayar Iuran" color="bg-orange-500" onClick={() => navigate('/pay')} />
-        <MenuCard icon={FileText} label="Surat Online" color="bg-purple-500" onClick={() => navigate('/request-letter')} />
-        <MenuCard icon={Bell} label="Lapor / Info" color="bg-teal-500" onClick={() => navigate('/citizen-report')} />
+      {/* MAIN CONTENT */}
+      <div className="px-4 -mt-16 relative z-20 space-y-6">
         
-        <button onClick={() => { setLoading(true); fetchDashboard(); }} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-3 active:scale-95 transition">
-          <div className="p-3 rounded-full bg-blue-500 text-white shadow-md">
-            <RefreshCw className={`w-6 h-6 ${loading ? 'animate-spin' : ''}`} />
-          </div>
-          <span className="text-xs font-medium text-gray-600">Refresh</span>
-        </button>
-      </div>
-
-      <div className="px-6 space-y-8">
-        
-        {/* 3. RIWAYAT SURAT */}
-        <div>
-           <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-             <FileText className="w-4 h-4 text-purple-500"/> Riwayat Surat
-           </h3>
-
-           {loading && !dashboardData ? <SkeletonList /> : (!allSurat || allSurat.length === 0) ? (
-              <EmptyState text="Belum ada pengajuan surat." />
-           ) : (
-             <div className="space-y-3">
-               {visibleSurat.map((doc) => (
-                 <div key={doc.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 relative overflow-hidden animate-fade-in">
-                    <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${doc.status === 'APPROVED' ? 'bg-green-500' : doc.status === 'REJECTED' ? 'bg-red-500' : 'bg-yellow-500'}`}></div>
-                    <div className="pl-3">
-                       <div className="flex justify-between items-start mb-2">
-                          <div>
-                             <h4 className="font-bold text-gray-800 text-sm">{doc.type.replace(/_/g, ' ')}</h4>
-                             <p className="text-[10px] text-gray-400">ID: {doc.id.substring(0,8)}...</p>
-                          </div>
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${doc.status === 'APPROVED' ? 'bg-green-100 text-green-700' : doc.status === 'REJECTED' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                             {doc.status}
-                          </span>
-                       </div>
-                       <div className="flex justify-end pt-2 mt-2 border-t border-gray-50">
-                          {doc.status === 'APPROVED' && doc.pdf_url ? (
-                             <a href={doc.pdf_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow hover:bg-green-700 transition">
-                                <Download className="w-3 h-3" /> Download PDF
-                             </a>
-                          ) : doc.status === 'APPROVED' ? (
-                             <span className="text-[10px] text-gray-400 italic">Sedang generate PDF...</span>
-                          ) : doc.status === 'REQUESTED' ? (
-                             <span className="text-[10px] text-yellow-600 flex items-center gap-1"><Clock className="w-3 h-3"/> Menunggu Admin</span>
-                          ) : (
-                             <span className="text-[10px] text-red-500 flex items-center gap-1"><XCircle className="w-3 h-3"/> Ditolak</span>
-                          )}
-                       </div>
-                    </div>
-                 </div>
-               ))}
-               
-               {allSurat.length > itemsPerPage && (
-                 <div className="flex justify-between items-center mt-4 pt-2 border-t border-gray-100">
-                    <span className="text-[10px] text-gray-400">Hal {suratPage} dari {Math.ceil(allSurat.length / itemsPerPage)}</span>
-                    <div className="flex gap-2">
-                      <button disabled={suratPage === 1} onClick={() => setSuratPage(p => p - 1)} className="px-3 py-1 text-xs border rounded-lg hover:bg-gray-50 disabled:opacity-50">Prev</button>
-                      <button disabled={suratPage >= Math.ceil(allSurat.length / itemsPerPage)} onClick={() => setSuratPage(p => p + 1)} className="px-3 py-1 text-xs border rounded-lg hover:bg-gray-50 disabled:opacity-50">Next</button>
-                    </div>
-                 </div>
-               )}
-             </div>
-           )}
-        </div>
-
-        {/* 4. INFO WARGA */}
-        <div>
-          <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-             <Bell className="w-4 h-4 text-teal-500"/> Info Warga
-          </h3>
-          <div className="space-y-3">
-             {dashboardData?.feed?.map((item, idx) => (
-               <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-                  <div className="flex items-center mb-2 gap-2">
-                    <span className={`text-[10px] font-bold px-2 py-1 rounded inline-block ${item.category.includes('DARURAT') ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
-                       {item.category}
-                    </span>
-                    {item.is_urgent && (
-                      <span className="bg-red-600 text-white text-[10px] px-2 py-0.5 rounded-full animate-pulse flex items-center gap-1 shadow-sm">
-                        <AlertCircle className="w-3 h-3"/> PENTING
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm text-gray-700 leading-relaxed">{item.content}</p>
-                  <p className="text-[10px] text-gray-400 mt-2 text-right">{new Date(item.date).toLocaleDateString()}</p>
-               </div>
-             ))}
-             {!loading && (!dashboardData?.feed || dashboardData.feed.length === 0) && (
-                <EmptyState text="Belum ada info terbaru." />
-             )}
-          </div>
-        </div>
-
-      </div>
-
-      {/* FOOTER VENDOR */}
-      <VendorFooter theme="light" />
-
-      {/* --- MODALS (PROFIL, CONFIRM, STATUS) --- */}
-      {showProfileModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 animate-fade-in">
-          <div className="bg-white w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="bg-gray-50 px-6 py-4 border-b flex justify-between items-center shrink-0">
-              <h3 className="font-bold text-gray-800 flex items-center gap-2"><User className="w-5 h-5 text-indigo-600"/> Edit Profil Saya</h3>
-              <button onClick={() => setShowProfileModal(false)} className="p-1 bg-gray-200 rounded-full text-gray-500 hover:bg-gray-300"><X className="w-5 h-5"/></button>
-            </div>
-            <div className="p-6 overflow-y-auto">
-              <form onSubmit={initiateSaveProfile} className="space-y-5">
-                <div><label className="text-xs font-bold text-gray-500 uppercase block mb-1">Nama</label><input type="text" value={profileData.name} onChange={e => setProfileData({...profileData, name: e.target.value})} className="w-full border-b-2 py-2 outline-none"/></div>
-                <div><label className="text-xs font-bold text-gray-500 uppercase block mb-1">No HP</label><input type="text" value={profileData.phone} onChange={e => setProfileData({...profileData, phone: e.target.value})} className="w-full border-b-2 py-2 outline-none"/></div>
-                <div><label className="text-xs font-bold text-gray-500 uppercase block mb-1">Alamat</label><textarea rows="2" value={profileData.address} onChange={e => setProfileData({...profileData, address: e.target.value})} className="w-full border-b-2 py-2 outline-none"/></div>
-                <div className="bg-red-50 p-4 rounded-xl border border-red-100">
-                   <label className="text-xs font-bold text-red-500 uppercase block mb-1">Password Baru</label>
-                   <input type="text" value={profileData.password} onChange={e => setProfileData({...profileData, password: e.target.value})} className="w-full bg-white px-3 py-2 rounded border border-red-200 text-sm outline-none"/>
+        {/* 1. SUPER MENU GRID */}
+        <div className="bg-white rounded-3xl shadow-lg p-6 animate-slide-up">
+          <h2 className="text-gray-400 font-bold text-[10px] mb-4 uppercase tracking-widest text-center">Menu Utama</h2>
+          <div className="grid grid-cols-3 gap-y-6 gap-x-4">
+            {menuItems.map((item, idx) => (
+              <button key={idx} onClick={() => navigate(item.link)} className="flex flex-col items-center justify-center gap-2 group active:scale-95 transition">
+                <div className={`p-3.5 rounded-2xl ${item.color} text-white shadow-md group-hover:shadow-lg transition-all`}>
+                  <item.icon className="w-6 h-6" />
                 </div>
-                <button type="submit" className="w-full bg-indigo-600 text-white font-bold py-3.5 rounded-xl shadow-lg mt-4 flex justify-center gap-2"><Save className="w-4 h-4"/> Simpan</button>
-              </form>
+                <span className="text-[11px] font-bold text-gray-600 group-hover:text-blue-600 text-center">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 2. FEED */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="p-4 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
+                <Bell className="w-5 h-5 text-indigo-600" />
+                <h3 className="font-bold text-gray-800">Informasi & Laporan</h3>
             </div>
+            <div className="p-4 space-y-4">
+                {dashboardData?.feed?.filter(f => f.type !== 'REPORT' || f.status !== 'CLOSE').length > 0 ? (
+                    dashboardData.feed.filter(f => f.type !== 'REPORT' || f.status !== 'CLOSE').map((item, idx) => (
+                        <div key={idx} className={`relative p-4 rounded-xl border shadow-sm ${item.category==='DARURAT'||item.is_panic ? 'bg-red-50 border-red-300' : 'bg-white border-gray-200'}`}>
+                            <div className="flex justify-between items-start mb-2">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md uppercase bg-gray-100 text-gray-600">{item.category}</span>
+                                </div>
+                                <span className="text-[10px] text-gray-400 font-mono">{new Date(item.date).toLocaleDateString('id-ID', {day: 'numeric', month: 'short'})}</span>
+                            </div>
+                            <p className="text-sm text-gray-700 leading-snug">{item.content}</p>
+                        </div>
+                    ))
+                ) : (
+                    <div className="text-center py-8 text-xs text-gray-400">Belum ada informasi terbaru.</div>
+                )}
+            </div>
+        </div>
+
+        {/* 3. HISTORY TABS */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="flex border-b border-gray-200">
+               <button onClick={() => setActiveTab('PAYMENT')} className={`flex-1 py-4 text-sm font-bold text-center ${activeTab === 'PAYMENT' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500'}`}>Riwayat Iuran</button>
+               <button onClick={() => setActiveTab('LETTER')} className={`flex-1 py-4 text-sm font-bold text-center ${activeTab === 'LETTER' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500'}`}>Riwayat Surat</button>
+            </div>
+            {activeTab === 'PAYMENT' && (
+              <div className="animate-fade-in divide-y divide-gray-100">
+                 {paginatedPay.map((item) => (
+                    <div key={item.id} onClick={() => setExpandedPayId(expandedPayId === item.id ? null : item.id)} className="p-4 bg-white hover:bg-gray-50 transition cursor-pointer">
+                        <div className="flex justify-between items-center">
+                            <div><p className="font-bold text-xs uppercase">{item.category}</p><p className="text-[10px] text-gray-400">{new Date(item.date).toLocaleDateString('id-ID')}</p></div>
+                            <div className="text-right"><p className="font-bold text-sm">Rp {Number(item.amount).toLocaleString('id-ID')}</p><span className="text-[9px] font-bold text-green-600">{item.status}</span></div>
+                        </div>
+                        {expandedPayId === item.id && <div className="mt-2 pt-2 border-t text-xs text-gray-500">Catatan: {item.notes}</div>}
+                    </div>
+                 ))}
+                 {payHistory.length > ITEMS_PER_PAGE && <div className="p-3 flex justify-center gap-4 text-xs font-bold text-indigo-600"><button onClick={()=>setPayPage(p=>Math.max(1,p-1))}>Prev</button><span>{payPage}</span><button onClick={()=>setPayPage(p=>p+1)}>Next</button></div>}
+              </div>
+            )}
+            {activeTab === 'LETTER' && (
+              <div className="animate-fade-in divide-y divide-gray-100">
+                 {paginatedLetter.map((item) => (
+                    <div key={item.id} onClick={() => setExpandedLetterId(expandedLetterId === item.id ? null : item.id)} className="p-4 bg-white hover:bg-gray-50 transition cursor-pointer">
+                        <div className="flex justify-between items-center">
+                            <div><p className="font-bold text-xs truncate w-40">{item.type.replace(/_/g, ' ')}</p><p className="text-[10px] text-gray-400">{new Date(item.date).toLocaleDateString('id-ID')}</p></div>
+                            <span className="text-[9px] font-bold text-green-600 border px-2 py-1 rounded">{item.status}</span>
+                        </div>
+                        {expandedLetterId === item.id && <div className="mt-2 pt-2 border-t text-xs text-gray-500">Keperluan: {getNote(item.note)}</div>}
+                    </div>
+                 ))}
+                 {letterHistory.length > ITEMS_PER_PAGE && <div className="p-3 flex justify-center gap-4 text-xs font-bold text-purple-600"><button onClick={()=>setLetterPage(p=>Math.max(1,p-1))}>Prev</button><span>{letterPage}</span><button onClick={()=>setLetterPage(p=>p+1)}>Next</button></div>}
+              </div>
+            )}
+        </div>
+
+      </div>
+
+      {/* MODALS */}
+      {showProfileModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-white w-full max-w-sm rounded-2xl p-6">
+            <h3 className="font-bold text-lg mb-4">Edit Profil</h3>
+            <form onSubmit={handleUpdateProfile} className="space-y-3">
+               <input value={formData.name} onChange={e=>setFormData({...formData,name:e.target.value})} className="w-full p-2 border rounded" placeholder="Nama"/>
+               <input value={formData.phone} onChange={e=>setFormData({...formData,phone:e.target.value})} className="w-full p-2 border rounded" placeholder="HP"/>
+               <button type="submit" disabled={isUpdating} className="w-full py-3 bg-blue-600 text-white rounded font-bold">{isUpdating ? 'Menyimpan...' : 'Simpan'}</button>
+               <button type="button" onClick={()=>setShowProfileModal(false)} className="w-full py-3 text-gray-500">Batal</button>
+            </form>
           </div>
         </div>
       )}
 
       {showConfirmDialog && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 transform transition-all scale-100 text-center">
-            <CheckCircle className="h-16 w-16 text-indigo-600 mx-auto mb-6 bg-indigo-100 rounded-full p-3" />
-            <h3 className="text-lg font-bold">Simpan Perubahan?</h3>
-            <div className="mt-6 flex gap-3">
-              <button onClick={() => setShowConfirmDialog(false)} className="flex-1 px-4 py-2.5 bg-gray-100 font-bold rounded-xl">Batal</button>
-              <button onClick={processUpdateProfile} className="flex-1 px-4 py-2.5 bg-indigo-600 text-white font-bold rounded-xl">Ya, Simpan</button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <div className="bg-white p-6 rounded-2xl text-center shadow-2xl">
+                <h3 className="font-bold text-lg mb-4">Keluar Aplikasi?</h3>
+                <div className="flex gap-3">
+                    <button onClick={()=>setShowConfirmDialog(false)} className="flex-1 py-2 bg-gray-100 rounded-lg">Batal</button>
+                    <button onClick={handleLogout} className="flex-1 py-2 bg-red-600 text-white rounded-lg">Ya</button>
+                </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {statusModal.show && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
-            {statusModal.type === 'success' ? <CheckCircle className="h-16 w-16 text-green-600 mx-auto mb-4 bg-green-100 rounded-full p-3"/> : <XCircle className="h-16 w-16 text-red-600 mx-auto mb-4 bg-red-100 rounded-full p-3"/>}
-            <h3 className="text-xl font-bold mb-2">{statusModal.title}</h3>
-            <p className="text-sm text-gray-500 mb-6">{statusModal.message}</p>
-            <button onClick={handleStatusOk} className="w-full py-3 bg-gray-900 text-white rounded-xl font-bold shadow-lg">Mengerti</button>
-          </div>
         </div>
       )}
 
     </div>
   )
 }
-
-function MenuCard({ icon: Icon, label, color, onClick }) {
-  return (
-    <button onClick={onClick} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-3 active:scale-95 transition">
-      <div className={`p-3 rounded-full ${color} text-white shadow-md`}><Icon className="w-6 h-6" /></div>
-      <span className="text-xs font-medium text-gray-600">{label}</span>
-    </button>
-  )
-}
-
-function EmptyState({ text }) { return <div className="text-center p-6 bg-white rounded-xl border border-dashed border-gray-300 text-gray-400 text-xs">{text}</div> }
-function SkeletonList() { return <div className="space-y-3">{[1,2].map(i => <div key={i} className="h-24 bg-gray-200 rounded-xl animate-pulse"></div>)}</div> }

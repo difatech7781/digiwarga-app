@@ -8,6 +8,10 @@ export default function BrandHeader({ theme = 'light' }) {
   const subtitleColor = theme === 'dark' ? 'text-blue-100' : 'text-gray-500'
   const iconBg = theme === 'dark' ? 'bg-white/10 text-white' : 'bg-blue-50 text-blue-600'
 
+  // [BARU] Baca Config dari Storage
+  const config = JSON.parse(localStorage.getItem('dg_config') || '{}');
+  const appName = config.APP_NAME || "DigiWarga"; // Default Name
+
   return (
     <div className="text-center mb-8">
       <div className="flex justify-center mb-4">
@@ -24,13 +28,17 @@ export default function BrandHeader({ theme = 'light' }) {
         />
         
         {/* FALLBACK ICON */}
-        <div className={`w-20 h-20 rounded-full items-center justify-center shadow-inner hidden ${iconBg}`}>
-           <LogIn className="w-10 h-10" />
+        <div className={`w-20 h-20 rounded-full items-center justify-center hidden ${iconBg} backdrop-blur-sm border border-white/20 shadow-xl`}>
+          <LogIn className="w-10 h-10" />
         </div>
       </div>
       
-      <h1 className={`text-3xl font-bold tracking-tight ${titleColor}`}>DigiWarga</h1>
-      <p className={`text-sm mt-1 font-medium ${subtitleColor}`}>Digitalisasi Lingkungan Kita</p>
+      <h1 className={`text-3xl font-bold mb-1 tracking-tight ${titleColor}`}>
+        {appName}
+      </h1>
+      <p className={`text-sm font-medium ${subtitleColor}`}>
+        Sistem Informasi Warga Digital
+      </p>
     </div>
   )
 }
