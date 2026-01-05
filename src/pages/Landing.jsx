@@ -5,7 +5,7 @@ import {
   MapPin, ChevronRight, Image as ImageIcon, ShieldAlert,
   ArrowRight, Siren, Bell, ChevronLeft, User,
   ShieldCheck, Users, Vote, Box, Store, Phone, Info,
-  Menu, Wallet // Icon tambahan
+  Menu, Wallet, Video // Icon tambahan
 } from 'lucide-react'
 import BrandHeader from '../components/BrandHeader'
 import VendorFooter from '../components/VendorFooter'
@@ -88,6 +88,7 @@ export default function Landing() {
 
   // --- QUICK FEATURES CONFIG ---
   const quickFeatures = [
+    { label: 'CCTV', icon: Video, link: '/cctv', color: 'bg-red-600' },
     { label: 'Ronda', icon: ShieldCheck, link: '/ronda', color: 'bg-slate-700' },
     { label: 'Tamu', icon: Users, link: '/tamu', color: 'bg-pink-600' },
     { label: 'Vote', icon: Vote, link: '/vote', color: 'bg-teal-600' },
